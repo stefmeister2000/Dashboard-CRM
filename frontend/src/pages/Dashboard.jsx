@@ -7,20 +7,33 @@ export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [leadSourceFilter, setLeadSourceFilter] = useState('');
   const { selectedBusiness, loading: businessLoading } = useBusiness();
 
   useEffect(() => {
     if (!businessLoading) {
       loadMetrics();
     }
-  }, [selectedBusiness, businessLoading]);
+  }, [selectedBusiness, businessLoading, leadSourceFilter]);
 
   const loadMetrics = async () => {
     setLoading(true);
     try {
       const params = selectedBusiness ? { business_id: selectedBusiness.toString() } : {};
       const response = await dashboardAPI.getMetrics(params);
-      setMetrics(response.data);
+      let filteredMetrics = response.data;
+      
+      // Filter last signups by lead source if filter is set
+      if (leadSourceFilter && filteredMetrics.lastSignups) {
+        filteredMetrics = {
+          ...filteredMetrics,
+          lastSignups: filteredMetrics.lastSignups.filter(
+            client => client.source === leadSourceFilter
+          )
+        };
+      }
+      
+      setMetrics(filteredMetrics);
     } catch (error) {
       console.error('Failed to load metrics:', error);
     } finally {
@@ -176,7 +189,26 @@ export default function Dashboard() {
 
       {/* Recent Signups Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Last 20 Signups</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Last 20 Signups</h2>
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-gray-700">Filter by Lead Source:</label>
+            <select
+              value={leadSourceFilter}
+              onChange={(e) => setLeadSourceFilter(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent bg-white text-sm"
+            >
+              <option value="">All Sources</option>
+              <option value="website">Website</option>
+              <option value="manual">Manual</option>
+              <option value="import">Import</option>
+              <option value="referral">Referral</option>
+              <option value="social">Social Media</option>
+              <option value="email">Email Campaign</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -199,37 +231,55 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {metrics.lastSignups.map((client) => (
-                <tr key={client.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <Link
-                      to={`/clients/${client.id}`}
-                      className="text-cyan-600 hover:text-cyan-800 font-medium"
-                    >
-                      {client.full_name}
-                    </Link>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {client.email || '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                      client.status === 'active' ? 'bg-green-100 text-green-800' :
-                      client.status === 'contacted' ? 'bg-blue-100 text-blue-800' :
-                      client.status === 'inactive' ? 'bg-gray-100 text-gray-800' :
-                      'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {client.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">
-                    {client.source}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {new Date(client.created_at).toLocaleDateString()}
+              {metrics.lastSignups && metrics.lastSignups.length > 0 ? (
+                metrics.lastSignups.map((client) => (
+                  <tr key={client.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <Link
+                        to={`/clients/${client.id}`}
+                        className="text-cyan-600 hover:text-cyan-800 font-medium"
+                      >
+                        {client.full_name}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {client.email || '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        client.status === 'active' ? 'bg-green-100 text-green-800' :
+                        client.status === 'contacted' ? 'bg-blue-100 text-blue-800' :
+                        client.status === 'inactive' ? 'bg-gray-100 text-gray-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {client.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${
+                        client.source === 'website' ? 'bg-cyan-100 text-cyan-800' :
+                        client.source === 'manual' ? 'bg-blue-100 text-blue-800' :
+                        client.source === 'import' ? 'bg-purple-100 text-purple-800' :
+                        client.source === 'referral' ? 'bg-green-100 text-green-800' :
+                        client.source === 'social' ? 'bg-pink-100 text-pink-800' :
+                        client.source === 'email' ? 'bg-orange-100 text-orange-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {client.source}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {new Date(client.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                    {leadSourceFilter ? `No signups found for source: ${leadSourceFilter}` : 'No signups found'}
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
