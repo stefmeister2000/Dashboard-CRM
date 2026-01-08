@@ -45,7 +45,7 @@ router.post('/',
     body('zip_code').optional().isString(),
     body('country').optional().isString(),
     body('tax_id').optional().isString(),
-    body('website').optional().isURL()
+    body('website').optional().isString()
   ],
   async (req, res) => {
     try {
@@ -77,7 +77,11 @@ router.post('/',
       res.status(201).json(newBusiness);
     } catch (error) {
       console.error('Create business error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      console.error('Error details:', error.message, error.stack);
+      res.status(500).json({ 
+        error: 'Internal server error',
+        details: error.message 
+      });
     }
   }
 );
@@ -94,7 +98,7 @@ router.put('/:id',
     body('zip_code').optional().isString(),
     body('country').optional().isString(),
     body('tax_id').optional().isString(),
-    body('website').optional().isURL()
+    body('website').optional().isString()
   ],
   async (req, res) => {
     try {
@@ -205,4 +209,5 @@ router.delete('/:id', async (req, res) => {
 });
 
 export default router;
+
 

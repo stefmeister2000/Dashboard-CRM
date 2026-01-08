@@ -53,13 +53,17 @@ export default function ClientProfile() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      console.log('Saving client with data:', editForm);
+      console.log('business_id being sent:', editForm.business_id, 'type:', typeof editForm.business_id);
       const response = await clientsAPI.update(id, editForm);
+      console.log('Update response:', response.data);
       setClient(response.data);
       setEditing(false);
       await loadClientData(); // Reload to get updated timeline
     } catch (error) {
       console.error('Failed to update client:', error);
-      alert('Failed to update client');
+      console.error('Error response:', error.response?.data);
+      alert(error.response?.data?.error || 'Failed to update client');
     } finally {
       setSaving(false);
     }

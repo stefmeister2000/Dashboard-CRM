@@ -1,23 +1,36 @@
 import express from 'express';
 import { body, validationResult, query } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
+import { authenticateApiKey } from '../middleware/apiKey.js';
 import { dbGet, dbAll, dbRun } from '../database.js';
 
 const router = express.Router();
 
 // Create client (public API endpoint for website signups - must be before auth middleware)
+// Supports optional API key authentication and business_id assignment
 router.post('/',
+  authenticateApiKey,
   [
     body('full_name').notEmpty().trim(),
     body('email').optional().isEmail().normalizeEmail(),
     body('phone').optional().isString(),
     body('source').optional().isString(),
-    body('status').optional().isIn(['new', 'contacted', 'active', 'inactive'])
+    body('status').optional().isIn(['new', 'contacted', 'active', 'inactive']),
+    body('business_id').optional().isInt()
   ],
   async (req, res) => {
+    // Log incoming request for debugging
+    console.log('=== Webhook Request Received ===');
+    console.log('Method:', req.method);
+    console.log('URL:', req.url);
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+    console.log('IP:', req.ip || req.connection.remoteAddress);
+    
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        console.log('Validation errors:', errors.array());
         return res.status(400).json({ errors: errors.array() });
       }
 
@@ -28,6 +41,7 @@ router.post('/',
         source = 'website',
         status = 'new',
         tags = [],
+        business_id,
         utm_source,
         utm_medium,
         utm_campaign,
@@ -35,10 +49,30 @@ router.post('/',
         signup_page
       } = req.body;
 
+      // If API key user provided, use their default business if business_id not specified
+      let finalBusinessId = business_id;
+      if (!finalBusinessId && req.apiKeyUser) {
+        // Try to get user's default business (first business they created)
+        const userBusiness = await dbGet(
+          'SELECT id FROM businesses WHERE id IN (SELECT business_id FROM clients WHERE business_id IS NOT NULL) LIMIT 1'
+        );
+        if (userBusiness) {
+          finalBusinessId = userBusiness.id;
+        }
+      }
+
+      // Validate business_id exists if provided
+      if (finalBusinessId) {
+        const business = await dbGet('SELECT id FROM businesses WHERE id = ?', [finalBusinessId]);
+        if (!business) {
+          return res.status(400).json({ error: 'Invalid business_id' });
+        }
+      }
+
       const result = await dbRun(
-        `INSERT INTO clients (full_name, email, phone, status, source, tags, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [full_name, email || null, phone || null, status, source, JSON.stringify(tags)]
+        `INSERT INTO clients (full_name, email, phone, status, source, tags, business_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [full_name, email || null, phone || null, status, source, JSON.stringify(tags), finalBusinessId || null]
       );
 
       const clientId = result.lastID;
@@ -55,18 +89,36 @@ router.post('/',
             utm_medium,
             utm_campaign,
             referrer,
-            signup_page
+            signup_page,
+            api_key_used: !!req.apiKeyUser
           })
         ]
       );
 
-      const newClient = await dbGet('SELECT * FROM clients WHERE id = ?', [clientId]);
+      const newClient = await dbGet(
+        `SELECT c.*, b.name as business_name 
+         FROM clients c 
+         LEFT JOIN businesses b ON c.business_id = b.id 
+         WHERE c.id = ?`,
+        [clientId]
+      );
       newClient.tags = JSON.parse(newClient.tags || '[]');
 
-      res.status(201).json(newClient);
+      console.log('✅ Lead created successfully:', {
+        id: newClient.id,
+        name: newClient.full_name,
+        email: newClient.email
+      });
+
+      res.status(201).json({
+        success: true,
+        client: newClient,
+        message: 'Lead created successfully'
+      });
     } catch (error) {
-      console.error('Create client error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      console.error('❌ Create client error:', error);
+      console.error('Error stack:', error.stack);
+      res.status(500).json({ error: 'Internal server error', details: error.message });
     }
   }
 );
@@ -206,7 +258,13 @@ router.put('/:id',
     body('phone').optional().isString(),
     body('status').optional().isIn(['new', 'contacted', 'active', 'inactive']),
     body('source').optional().isString(),
-    body('tags').optional().isArray()
+    body('tags').optional().isArray(),
+    body('business_id').optional().custom((value) => {
+      if (value === null || value === undefined || value === '') {
+        return true; // Allow null/empty values
+      }
+      return Number.isInteger(Number(value)); // Check if it's a valid integer
+    }).withMessage('business_id must be an integer or null')
   ],
   async (req, res) => {
     try {
@@ -215,7 +273,21 @@ router.put('/:id',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { full_name, email, phone, status, source, tags } = req.body;
+      const { full_name, email, phone, status, source, tags, business_id } = req.body;
+      
+      // Debug logging
+      console.log('=== Update Client Request ===');
+      console.log('Client ID:', req.params.id);
+      console.log('Request body:', JSON.stringify(req.body, null, 2));
+      console.log('business_id value:', business_id, 'type:', typeof business_id);
+
+      // Validate business_id exists if provided
+      if (business_id !== undefined && business_id !== null) {
+        const business = await dbGet('SELECT id FROM businesses WHERE id = ?', [business_id]);
+        if (!business) {
+          return res.status(400).json({ error: 'Invalid business_id' });
+        }
+      }
 
       // Check if client exists
       const existing = await dbGet('SELECT * FROM clients WHERE id = ?', [req.params.id]);
@@ -251,14 +323,26 @@ router.put('/:id',
         updates.push('tags = ?');
         params.push(JSON.stringify(tags));
       }
+      if (business_id !== undefined) {
+        updates.push('business_id = ?');
+        // Convert empty string to null, keep integer as is
+        const finalBusinessId = business_id === '' || business_id === null ? null : parseInt(business_id);
+        params.push(finalBusinessId);
+        console.log('Setting business_id to:', finalBusinessId);
+      }
 
       updates.push('updated_at = CURRENT_TIMESTAMP');
       params.push(req.params.id);
+
+      console.log('Update query:', `UPDATE clients SET ${updates.join(', ')} WHERE id = ?`);
+      console.log('Update params:', params);
 
       await dbRun(
         `UPDATE clients SET ${updates.join(', ')} WHERE id = ?`,
         params
       );
+      
+      console.log('✅ Client updated successfully');
 
       // Create update event
       await dbRun(

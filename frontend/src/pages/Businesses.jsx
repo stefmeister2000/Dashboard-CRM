@@ -50,7 +50,13 @@ export default function Businesses() {
       resetForm();
     } catch (error) {
       console.error('Failed to save business:', error);
-      alert('Failed to save business');
+      // Show actual error message instead of generic alert
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.errors?.[0]?.msg || 
+                          error.response?.data?.errors?.[0]?.message ||
+                          error.message || 
+                          'Failed to save business';
+      alert(errorMessage);
     }
   };
 

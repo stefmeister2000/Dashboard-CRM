@@ -36,7 +36,10 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   register: (email, password, role) => api.post('/auth/register', { email, password, role }),
-  changePassword: (currentPassword, newPassword) => api.post('/auth/change-password', { currentPassword, newPassword })
+  changePassword: (currentPassword, newPassword) => api.post('/auth/change-password', { currentPassword, newPassword }),
+  getApiKey: () => api.get('/auth/api-key'),
+  generateApiKey: () => api.post('/auth/api-key/generate'),
+  revokeApiKey: () => api.post('/auth/api-key/revoke')
 };
 
 // Clients API

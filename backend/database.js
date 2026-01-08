@@ -42,9 +42,21 @@ export async function initDatabase() {
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'admin',
+      api_key TEXT UNIQUE,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Add api_key column to users table if it doesn't exist
+  try {
+    const tableInfo = await dbAll("PRAGMA table_info(users)");
+    const hasApiKey = tableInfo.some(col => col.name === 'api_key');
+    if (!hasApiKey) {
+      await dbRun('ALTER TABLE users ADD COLUMN api_key TEXT UNIQUE');
+    }
+  } catch (error) {
+    console.log('Note: api_key column may already exist');
+  }
 
   // Clients table
   await dbRun(`

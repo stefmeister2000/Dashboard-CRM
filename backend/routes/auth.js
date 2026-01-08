@@ -1,6 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { dbGet, dbRun } from '../database.js';
@@ -141,6 +142,72 @@ router.post('/change-password',
     }
   }
 );
+
+// Get API key (requires authentication)
+router.get('/api-key', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const user = await dbGet('SELECT api_key FROM users WHERE id = ?', [userId]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ api_key: user.api_key || null });
+  } catch (error) {
+    console.error('Get API key error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Generate API key (requires authentication)
+router.post('/api-key/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Generate a secure random API key
+    const apiKey = `crm_${crypto.randomBytes(32).toString('hex')}`;
+
+    await dbRun(
+      'UPDATE users SET api_key = ? WHERE id = ?',
+      [apiKey, userId]
+    );
+
+    res.json({
+      api_key: apiKey,
+      message: 'API key generated successfully'
+    });
+  } catch (error) {
+    console.error('Generate API key error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Revoke API key (requires authentication)
+router.post('/api-key/revoke', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    await dbRun(
+      'UPDATE users SET api_key = NULL WHERE id = ?',
+      [userId]
+    );
+
+    res.json({ message: 'API key revoked successfully' });
+  } catch (error) {
+    console.error('Revoke API key error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 export default router;
 

@@ -61,6 +61,10 @@ This will start:
 ### Authentication
 - `POST /api/auth/login` - Login
 - `POST /api/auth/register` - Register new user (admin only)
+- `POST /api/auth/change-password` - Change password
+- `GET /api/auth/api-key` - Get API key
+- `POST /api/auth/api-key/generate` - Generate API key
+- `POST /api/auth/api-key/revoke` - Revoke API key
 
 ### Clients
 - `GET /api/clients` - List clients (with search/filters)
@@ -84,7 +88,51 @@ This will start:
 
 ## Website Integration
 
-To connect your website signup form to this CRM, make a POST request to `/api/clients`:
+Connect your website leads directly to this CRM platform. The integration supports optional API key authentication for enhanced security.
+
+### Getting Your API Key
+
+1. Log in to your CRM dashboard
+2. Navigate to **Settings** → **Website Integration** tab
+3. Click **Generate API Key** to create a new key
+4. Copy and securely store your API key
+
+### Integration Methods
+
+#### Method 1: With API Key (Recommended)
+
+```javascript
+async function submitLead(formData) {
+  const response = await fetch('http://your-crm-domain.com/api/clients', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'your-api-key-here' // Optional but recommended
+    },
+    body: JSON.stringify({
+      full_name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      source: 'website',
+      business_id: null, // Optional: assign to specific business
+      utm_source: new URLSearchParams(window.location.search).get('utm_source'),
+      utm_medium: new URLSearchParams(window.location.search).get('utm_medium'),
+      utm_campaign: new URLSearchParams(window.location.search).get('utm_campaign'),
+      referrer: document.referrer,
+      signup_page: window.location.pathname
+    })
+  });
+  
+  if (response.ok) {
+    const data = await response.json();
+    console.log('Lead created:', data);
+  }
+}
+```
+
+#### Method 2: Public Endpoint (No Authentication)
+
+The endpoint works without authentication for backward compatibility, but API key authentication is recommended for production use.
 
 ```javascript
 fetch('http://your-crm-domain.com/api/clients', {
@@ -96,17 +144,38 @@ fetch('http://your-crm-domain.com/api/clients', {
     full_name: 'John Doe',
     email: 'john@example.com',
     phone: '+1234567890',
-    source: 'website',
-    utm_source: 'google',
-    utm_medium: 'cpc',
-    utm_campaign: 'summer_sale',
-    referrer: 'https://google.com',
-    signup_page: '/signup'
+    source: 'website'
   })
 });
 ```
 
-**Note**: The `/api/clients` POST endpoint is public (no authentication required) to allow website signups. All other endpoints require authentication.
+### API Endpoint Details
+
+**Endpoint**: `POST /api/clients`
+
+**Required Fields**:
+- `full_name` (string) - Lead's full name
+
+**Optional Fields**:
+- `email` (string) - Email address
+- `phone` (string) - Phone number
+- `source` (string) - Lead source (default: "website")
+- `status` (string) - Status: "new", "contacted", "active", "inactive" (default: "new")
+- `business_id` (integer) - Assign lead to specific business
+- `tags` (array) - Array of tags
+- `utm_source`, `utm_medium`, `utm_campaign` - UTM tracking parameters
+- `referrer` (string) - Referrer URL
+- `signup_page` (string) - Page where signup occurred
+
+**Response**: Returns the created client object with success status.
+
+### Authentication Endpoints
+
+- `GET /api/auth/api-key` - Get your current API key (requires authentication)
+- `POST /api/auth/api-key/generate` - Generate a new API key (requires authentication)
+- `POST /api/auth/api-key/revoke` - Revoke your API key (requires authentication)
+
+**Note**: All authentication endpoints require a valid JWT token in the Authorization header.
 
 ## Database Schema
 
@@ -170,4 +239,5 @@ npm run dev
 ## License
 
 MIT
+
 
